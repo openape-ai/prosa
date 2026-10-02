@@ -8,7 +8,7 @@ const USAGE = `usage:
   prosa run [-- <args...>]             execute the validated .output/index.ts with Node
 
 Configuration: prosa.json in the project root (model, baseUrl, apiKeyFile, packageManager, choices, maxTokens)
-Environment:   OPENAI_API_KEY, OPENAI_BASE_URL, PROSA_MODEL, PROSA_TIMEOUT_MS
+Environment:   OPENAI_API_KEY, OPENAI_BASE_URL, PROSA_MODEL, PROSA_MAX_TURNS, PROSA_TIMEOUT_MS
 Runtime:       Node ${process.versions.node} (Node >= 24 required)`;
 
 async function main(argv: string[]): Promise<void> {

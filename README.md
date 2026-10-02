@@ -5,7 +5,7 @@ Prosa compiles German prose into a TypeScript program, freezes the generated art
 ## Requirements
 
 - Node.js 24 or newer. Generated programs are `.ts` files that Node executes directly through type stripping, so they are limited to erasable TypeScript syntax (no enums, namespaces, parameter properties or decorators). The type check enforces this before a build is published.
-- `npm install` in this repository (installs `typescript` for validation and `@types/node`).
+- `npm install` in this repository (installs `typescript` for validation, `@types/node`, and the pi agent runtime for the compiler loop).
 - Optional: `npm link` to get a global `prosa` command; otherwise use `node src/cli.ts`.
 
 ## Usage
@@ -31,17 +31,28 @@ The project root is the nearest ancestor of the current directory that contains 
 | `choices` | accepted answers to compiler questions, sent with every compilation |
 | `maxTokens` | completion limit, default 8192 |
 
-`PROSA_TIMEOUT_MS` bounds one compiler request (default 300000). The key is read inside the compiler process, never logged, never written to the manifest, never sent to the model, and stripped from the generated program's environment together with every other `OPENAI_*` and `PROSA_*` variable.
+The key is read inside the compiler process, never logged, never written to the manifest, never sent to the model, and stripped from the generated program's environment together with every other `OPENAI_*` and `PROSA_*` variable.
 
 ### What `build` does
 
 1. Hashes the source, the accepted choices, the versioned compiler prompt, the harness version, the model, the generation options and the runtime contract. These are the build inputs.
 2. Reads `.output/prosa.manifest.json` if present and verifies every recorded file hash. Modified, missing or unexpected files are an error; `prosa build --force <file>` regenerates. Manual edits are never adopted silently.
 3. If the inputs and the output are unchanged, the build is reused: no model request, no rewritten bytes, no touched timestamps.
-4. Otherwise it requests one non-streaming chat completion, validates the JSON contract (relative `.ts` paths only, `index.ts` entry, dependency names and ranges, stated examples as checks, open questions), writes everything into a staging directory next to `.output`, type-checks the whole program with `tsc --strict`, runs the checks, and only then swaps the staging directory in. One bounded repair attempt feeds the validation failure back to the model. Any failure leaves the previous `.output` untouched.
+4. Otherwise it runs the compiler as a bounded tool loop (`@earendil-works/pi-agent-core` with `@earendil-works/pi-ai` as transport to any OpenAI-compatible endpoint). The model only has these tools, all executed and checked by the harness inside a staging directory next to `.output`:
+
+   | Tool | Effect |
+   | --- | --- |
+   | `write_file` | writes one relative `.ts` file; unsafe paths are rejected |
+   | `read_previous` | reads a file of the previous validated build |
+   | `typecheck` | `tsc --strict` over the staging directory |
+   | `run` | executes `index.ts` in the staging directory with a filtered environment and a timeout |
+   | `ask` | stops with questions for the author |
+   | `done` | submits dependencies, the checks for the examples stated in the prose, and a note |
+
+   After `done` the harness itself writes the `package.json`, hashes everything the model wrote, type-checks and runs the checks. A failure is fed back once (two rounds total); the turn budget is `PROSA_MAX_TURNS` (default 40) and the wall-clock limit `PROSA_TIMEOUT_MS` (default 600000). Only a validated staging directory is swapped in; any failure leaves the previous `.output` untouched.
 5. Open questions from the compiler abort the build and are printed; answer them in the prose or under `choices`.
 
-What validation establishes: the response matched the contract, all paths are safe, the program type-checks under Node ESM resolution, and the examples the prose states pass. A hash proves byte identity, so reuse re-establishes exactly that state and nothing more; it does not prove semantic correctness beyond the stated examples, and a fresh compilation of the same prose is not guaranteed to produce identical code.
+What validation establishes: all written paths are safe, the program type-checks under Node ESM resolution, and the examples the prose states pass. A hash proves byte identity, so reuse re-establishes exactly that state and nothing more; it does not prove semantic correctness beyond the stated examples, and a fresh compilation of the same prose is not guaranteed to produce identical code. The manifest records turns, tool calls and token usage of the compiler run as provenance only; they are not compared.
 
 ### Dependencies and `install`
 

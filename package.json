@@ -4,12 +4,18 @@
   "private": true,
   "description": "Compile German prose into a frozen TypeScript program and run it.",
   "type": "module",
-  "bin": { "prosa": "src/cli.ts" },
-  "engines": { "node": ">=24" },
+  "bin": {
+    "prosa": "src/cli.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "node --test test/*.test.ts"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^1.0.0",
+    "@earendil-works/pi-ai": "^1.0.0",
     "@types/node": "^24.0.0",
     "typescript": "^7.0.2"
   }

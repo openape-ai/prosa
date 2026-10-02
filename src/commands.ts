@@ -1,15 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import {
-  HARNESS_VERSION, LOCKFILES, RUNTIME, TSCONFIG, canonicalJson, hashFiles, programEnv, readGeneratedFiles, readManifest,
+  HARNESS_VERSION, LOCKFILES, RUNTIME, TSCONFIG, canonicalJson, hashFiles, listFiles, programEnv, readGeneratedFiles, readManifest,
   runChecks, sha256, typecheck, verifyOutput, writeManifest, type BuildInputs, type Manifest,
 } from "./artifact.ts";
-import { ENTRY, PROMPT_SHA256, PROMPT_VERSION, parseCompilerResponse, requestCompletion, type CompileRequest, type CompilerResponse } from "./compiler.ts";
+import { ENTRY, PROMPT_SHA256, PROMPT_VERSION, compile, type CompileResult, type CompileSession, type GeneratedFile } from "./compiler.ts";
 import { findProjectRoot, loadConfig, resolveApiKey, resolveModelSettings, type ProsaConfig } from "./config.ts";
 
 export const OUTPUT_DIR = ".output";
-const MAX_ATTEMPTS = 2;
 
 interface Project {
   root: string;
@@ -48,7 +47,7 @@ export async function build(sourceArg: string, options: { force: boolean }): Pro
   const inputs = computeInputs(project, sourcePath);
 
   const existing = readManifest(project.outDir);
-  let previousFiles: CompileRequest["previousFiles"];
+  let previousFiles: GeneratedFile[] | undefined;
   if (existing) {
     const problems = verifyOutput(project.outDir, existing);
     if (problems.length > 0 && !options.force) {
@@ -64,70 +63,60 @@ export async function build(sourceArg: string, options: { force: boolean }): Pro
 
   const settings = resolveModelSettings(project.config);
   const apiKey = resolveApiKey(project.config);
-  const request: CompileRequest = {
+  const staging = `${project.outDir}.staging-${process.pid}`;
+  const packageManager = project.config.packageManager ?? "npm";
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(staging, { recursive: true });
+  writeFileSync(join(staging, "tsconfig.json"), JSON.stringify(TSCONFIG, null, 2) + "\n");
+
+  let manifest: Manifest | undefined;
+  const session: CompileSession = {
     sourceName: basename(sourcePath),
     source: readFileSync(sourcePath, "utf8"),
     choices: project.config.choices ?? {},
-    previousFiles,
+    previousFiles: previousFiles ?? [],
+    staging,
+    validate: (result) => {
+      manifest = stageManifest(staging, result, inputs, packageManager);
+      return manifest.state === "validated" ? validateStaged(staging, manifest) : null;
+    },
   };
-  const staging = `${project.outDir}.staging-${process.pid}`;
-  const packageManager = project.config.packageManager ?? "npm";
 
   try {
-    let lastFailure: string | null = null;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      console.log(`compiling ${request.sourceName} with ${settings.model} (attempt ${attempt}/${MAX_ATTEMPTS})`);
-      const text = await requestCompletion(settings, apiKey, lastFailure ? { ...request, repair: lastFailure } : request);
-      let response: CompilerResponse;
-      try {
-        response = parseCompilerResponse(text);
-      } catch (error) {
-        lastFailure = (error as Error).message;
-        console.error(lastFailure);
-        continue;
-      }
-      if (response.questions.length > 0) {
-        throw new Error(`the compiler needs decisions before it can build:\n  - ${response.questions.join("\n  - ")}\nAnswer them in the prose or under "choices" in prosa.json, then build again.`);
-      }
-      const manifest = stageBuild(staging, response, inputs, packageManager);
-      lastFailure = manifest.state === "validated" ? validateStaged(staging, manifest) : null;
-      if (lastFailure) {
-        console.error(lastFailure);
-        continue;
-      }
-      publish(staging, project.outDir, manifest);
-      const fileCount = Object.keys(manifest.files).length;
-      console.log(`built ${OUTPUT_DIR}: ${fileCount} files, ${response.checks.length} checks, state ${manifest.state}`);
-      if (response.notes) console.log(`compiler notes: ${response.notes}`);
-      if (manifest.state === "awaiting-install") console.log(`external dependencies declared (${Object.keys(manifest.dependencies).join(", ")}): run \`prosa install\` before \`prosa run\``);
-      return;
-    }
-    throw new Error(`build failed after ${MAX_ATTEMPTS} attempts; the previous ${OUTPUT_DIR} is unchanged. Last problem:\n${lastFailure}`);
+    console.log(`compiling ${session.sourceName} with ${settings.model}`);
+    const { result, stats } = await compile(settings, apiKey, session, (line) => console.log(line));
+    if (!manifest) throw new Error("unreachable: validated without manifest");
+    manifest.compiler = stats;
+    publish(staging, project.outDir, manifest);
+    const fileCount = Object.keys(manifest.files).length;
+    console.log(`built ${OUTPUT_DIR}: ${fileCount} files, ${result.checks.length} checks, state ${manifest.state} (${stats.turns} turns, ${stats.toolCalls} tool calls, ${stats.inputTokens + stats.outputTokens} tokens)`);
+    if (result.notes) console.log(`compiler notes: ${result.notes}`);
+    if (manifest.state === "awaiting-install") console.log(`external dependencies declared (${Object.keys(manifest.dependencies).join(", ")}): run \`prosa install\` before \`prosa run\``);
+  } catch (error) {
+    throw new Error(`${(error as Error).message}\nThe previous ${OUTPUT_DIR} is unchanged.`);
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }
 }
 
-function stageBuild(staging: string, response: CompilerResponse, inputs: BuildInputs, packageManager: "npm" | "pnpm"): Manifest {
-  rmSync(staging, { recursive: true, force: true });
-  mkdirSync(staging, { recursive: true });
-  for (const file of response.files) {
-    mkdirSync(dirname(join(staging, file.path)), { recursive: true });
-    writeFileSync(join(staging, file.path), file.content);
-  }
-  const packageJson = { name: "prosa-output", private: true, type: "module", dependencies: response.dependencies };
+/** Harness-owned package.json plus hashes of everything the compiler actually wrote. */
+function stageManifest(staging: string, result: CompileResult, inputs: BuildInputs, packageManager: "npm" | "pnpm"): Manifest {
+  const packageJson = { name: "prosa-output", private: true, type: "module", dependencies: result.dependencies };
   writeFileSync(join(staging, "package.json"), JSON.stringify(packageJson, null, 2) + "\n");
-  writeFileSync(join(staging, "tsconfig.json"), JSON.stringify(TSCONFIG, null, 2) + "\n");
-  const hasDependencies = Object.keys(response.dependencies).length > 0;
+  const files = listFiles(staging);
+  const stray = files.filter((f) => !f.endsWith(".ts") && f !== "package.json" && f !== "tsconfig.json");
+  if (stray.length > 0) throw new Error(`compiler left unexpected files: ${stray.join(", ")}`);
+  if (!files.includes(ENTRY)) throw new Error(`compiler finished without writing ${ENTRY}`);
+  const hasDependencies = Object.keys(result.dependencies).length > 0;
   return {
     manifestVersion: 1,
     inputs,
     entry: ENTRY,
-    files: hashFiles(staging, [...response.files.map((f) => f.path), "package.json", "tsconfig.json"]),
-    dependencies: response.dependencies,
+    files: hashFiles(staging, files),
+    dependencies: result.dependencies,
     packageManager,
     lock: null,
-    checks: response.checks,
+    checks: result.checks,
     state: hasDependencies ? "awaiting-install" : "validated",
     compiledAt: new Date().toISOString(),
   };

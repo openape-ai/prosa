@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import type { Check, GeneratedFile } from "./compiler.ts";
+import type { Check, CompileStats, GeneratedFile } from "./compiler.ts";
 
 export const MANIFEST_FILE = "prosa.manifest.json";
 export const LOCKFILES: Record<string, "npm" | "pnpm"> = { "package-lock.json": "npm", "pnpm-lock.yaml": "pnpm" };
@@ -39,6 +39,8 @@ export interface Manifest {
   checks: Check[];
   state: BuildState;
   compiledAt: string;
+  /** Provenance of the compiler run; not part of the inputs and never compared. */
+  compiler?: CompileStats;
 }
 
 export function sha256(data: string | Buffer): string {
@@ -76,7 +78,7 @@ export function writeManifest(outDir: string, manifest: Manifest): void {
   writeFileSync(join(outDir, MANIFEST_FILE), JSON.stringify(manifest, null, 2) + "\n");
 }
 
-function listFiles(dir: string, prefix = ""): string[] {
+export function listFiles(dir: string, prefix = ""): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "node_modules" || entry.name === MANIFEST_FILE) continue;

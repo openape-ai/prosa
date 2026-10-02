@@ -1,0 +1,7 @@
+Applikation: Gruß in Farbe
+Hole dir das erste Programmargument als Name; fehlt es, verwende „Welt“.
+Schreibe „Hallo, “ gefolgt vom Namen, einem Ausrufezeichen und einem Zeilenumbruch auf stdout.
+Färbe dabei nur den Namen mit dem npm-Paket picocolors grün. Ist stdout kein Terminal, lässt picocolors die Farbcodes von selbst weg; das ist so gewünscht.
+Beende das Programm mit Exit-Code 0.
+
+Beispiel: Argument „Prosa“, stdout ist kein Terminal → stdout „Hallo, Prosa!“, Exit-Code 0

@@ -1,0 +1,16 @@
+Funktion: addiere
+Nimmt eine Liste natürlicher Zahlen und gibt ihre Summe zurück.
+Natürliche Zahlen sind hier die ganzen Zahlen ab 0, geschrieben nur mit den Ziffern 0 bis 9; die 0 zählt dazu.
+
+Applikation:
+Hole dir die Programmargumente. Jedes Argument muss eine natürliche Zahl sein.
+Ist ein Argument keine natürliche Zahl (zum Beispiel „abc“, „-2“ oder „2.5“), schreibe „Ungültiges Argument: “ gefolgt vom Argument auf stderr, schreibe nichts auf stdout und beende das Programm mit Exit-Code 2.
+Sonst addiere alle Argumente mit der Funktion addiere und merk dir das Ergebnis in der Variable result. Ohne Argumente ist result 0.
+Schreibe „Hallo Welt:“, dann genau ein Leerzeichen, dann result, dann einen Zeilenumbruch auf stdout.
+Beende das Programm mit Exit-Code 0.
+
+Beispiele:
+- Argumente „1 2 3“ → stdout „Hallo Welt: 6“, Exit-Code 0
+- keine Argumente → stdout „Hallo Welt: 0“, Exit-Code 0
+- Argumente „0 5“ → stdout „Hallo Welt: 5“, Exit-Code 0
+- Argumente „1 abc 3“ → stderr „Ungültiges Argument: abc“, stdout leer, Exit-Code 2

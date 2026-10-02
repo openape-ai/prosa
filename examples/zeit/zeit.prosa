@@ -1,0 +1,64 @@
+Titel: Zeiterfassung
+Ein Kommandozeilenwerkzeug, mit dem man Arbeitszeit auf Projekte bucht und auswertet.
+
+Entscheidungen:
+- Zeiten werden in ganzen Minuten gerechnet, Sekunden werden abgeschnitten.
+- Die Datei liegt im aktuellen Arbeitsverzeichnis, nicht im Home-Verzeichnis.
+- Zeitpunkte werden als ISO-8601-Zeichenketten in UTC gespeichert.
+
+# Begriffe
+
+## Projekt
+Ein Name aus Buchstaben, Ziffern und Bindestrichen, mindestens ein Zeichen.
+
+## Eintrag
+Ein [[Projekt]], ein Startzeitpunkt und optional ein Endzeitpunkt. Ein Eintrag ohne Ende ist „offen“.
+Es gibt höchstens einen offenen Eintrag.
+
+## Dauer
+Die ganzen Minuten zwischen Start und Ende eines Eintrags, bei offenen Einträgen bis jetzt.
+
+# Speicherung
+
+Alle [[Eintrag|Einträge]] stehen in der Datei „zeit.json“ im aktuellen Verzeichnis, als JSON-Liste in zeitlicher Reihenfolge.
+Fehlt die Datei, gilt sie als leer. Ist sie vorhanden, aber kein gültiges JSON oder keine Liste, gilt [[Fehlerverhalten]] mit „zeit.json ist beschädigt“.
+Schreibe die Datei nach jeder Änderung vollständig neu; schreibe erst in eine temporäre Datei im selben Verzeichnis und benenne sie dann um.
+
+# Befehle
+
+Das erste Programmargument ist der Befehl.
+
+## start
+Das zweite Argument ist das [[Projekt]]. Fehlt es oder ist es kein gültiges Projekt, gilt [[Fehlerverhalten]] mit „Ungültiges Projekt“.
+Gibt es bereits einen offenen [[Eintrag]], beende ihn jetzt.
+Lege einen neuen offenen Eintrag an und schreibe „Gestartet: <Projekt>“ auf stdout.
+
+## stop
+Beende den offenen Eintrag und schreibe „Gestoppt: <Projekt> (<Dauer> min)“ auf stdout.
+Gibt es keinen offenen Eintrag, gilt [[Fehlerverhalten]] mit „Kein offener Eintrag“.
+
+## bericht
+Siehe [[Bericht]].
+
+Jeder andere oder fehlende Befehl: [[Fehlerverhalten]] mit „Befehle: start <Projekt> | stop | bericht“.
+
+# Bericht
+
+Schreibe für jedes [[Projekt]], das in mindestens einem [[Eintrag]] vorkommt, eine Zeile „<Projekt>: <Summe der Dauern> min“, alphabetisch nach Projekt sortiert.
+Hat ein Projekt einen offenen Eintrag, hängt an die Zeile „ (offen)“ an.
+Gibt es keine Einträge, schreibe nichts. Exit-Code 0.
+
+# Fehlerverhalten
+Schreibe die Meldung auf stderr, nichts auf stdout, Exit-Code 2. Die Datei wird dabei nicht verändert.
+
+# Beispiele
+Jedes Beispiel beginnt in einem leeren Verzeichnis. „danach“ bedeutet einen weiteren Aufruf im selben Verzeichnis.
+
+- „start alpha“ → stdout „Gestartet: alpha“, Exit-Code 0
+- „start alpha“, danach „stop“ → stdout „Gestoppt: alpha (0 min)“, Exit-Code 0
+- „start alpha“, danach „start beta“ → stdout „Gestartet: beta“, Exit-Code 0
+- „start alpha“, danach „start beta“, danach „bericht“ → stdout „alpha: 0 min“ und in der nächsten Zeile „beta: 0 min (offen)“, Exit-Code 0
+- „stop“ ohne vorherigen Start → stderr „Kein offener Eintrag“, Exit-Code 2
+- „start“ ohne Projekt → stderr „Ungültiges Projekt“, Exit-Code 2
+- „bericht“ ohne Datei → stdout leer, Exit-Code 0
+- kein Argument → stderr „Befehle: start <Projekt> | stop | bericht“, Exit-Code 2

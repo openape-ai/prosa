@@ -193,7 +193,7 @@ export function run(args: string[]): void {
   }
   if (manifest.state !== "validated") throw new Error(`build is not validated (state ${manifest.state}): run \`prosa install\` first`);
 
-  const child = spawn(process.execPath, [manifest.entry, ...args], { cwd: project.outDir, stdio: "inherit", env: programEnv() });
+  const child = spawn(process.execPath, [join(project.outDir, manifest.entry), ...args], { stdio: "inherit", env: programEnv() });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => child.kill(signal));
   child.on("error", (error) => {
     console.error(`prosa: could not start ${manifest.entry}: ${error.message}`);

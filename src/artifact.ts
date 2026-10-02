@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { Check, CompileStats, GeneratedFile } from "./compiler.ts";
@@ -139,13 +140,28 @@ export function typecheck(outDir: string): string | null {
   return (result.stdout + result.stderr).trim() || `tsc exited with status ${result.status}`;
 }
 
+/** Runs the entry point in a fresh empty directory, after the optional preceding invocations. */
+export function runProgram(entryPath: string, args: string[], before: string[][]): { status: number | null; stdout: string; stderr: string } {
+  const cwd = mkdtempSync(join(tmpdir(), "prosa-run-"));
+  try {
+    for (const invocation of [...before, args]) {
+      const result = spawnSync(process.execPath, [entryPath, ...invocation], { cwd, encoding: "utf8", env: programEnv(), timeout: 30_000 });
+      if (result.error) return { status: null, stdout: "", stderr: `could not run: ${result.error.message}` };
+      if (invocation === args) return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    }
+    throw new Error("unreachable");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
 /** Runs the examples the prose stated against the generated entry point. */
 export function runChecks(outDir: string, entry: string, checks: Check[]): string | null {
   const failures: string[] = [];
   for (const check of checks) {
-    const result = spawnSync(process.execPath, [entry, ...check.args], { cwd: outDir, encoding: "utf8", env: programEnv(), timeout: 30_000 });
-    const label = `args ${JSON.stringify(check.args)}`;
-    if (result.error) failures.push(`${label}: ${result.error.message}`);
+    const result = runProgram(join(outDir, entry), check.args, check.before ?? []);
+    const label = `args ${JSON.stringify(check.args)}${check.before?.length ? ` after ${JSON.stringify(check.before)}` : ""}`;
+    if (result.status === null) failures.push(`${label}: ${result.stderr}`);
     else if (result.status !== check.exitCode) failures.push(`${label}: exit ${result.status}, expected ${check.exitCode}; stderr: ${result.stderr.trim()}`);
     else if (result.stdout.trimEnd() !== check.stdout.trimEnd()) failures.push(`${label}: stdout ${JSON.stringify(result.stdout)}, expected ${JSON.stringify(check.stdout)}`);
   }

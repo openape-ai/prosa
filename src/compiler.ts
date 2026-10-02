@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import { createModels, createProvider, Type, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
-import { programEnv, typecheck } from "./artifact.ts";
+import { runProgram, typecheck } from "./artifact.ts";
 import type { ModelSettings } from "./config.ts";
 
 export const PROMPT_VERSION = 2;
@@ -14,8 +13,8 @@ export const SYSTEM_PROMPT = `You are the Prosa compiler, prompt version ${PROMP
 
 Workflow:
 1. Write every module with write_file. "index.ts" is the application entry point and must exist. Put every function or component the prose names into its own module named after it.
-2. Call typecheck and fix every reported error. Call run with the arguments of each example the prose states and compare the output.
-3. Finish with done, listing external dependencies, one check per concrete example the prose literally states, and a one-sentence note on interpretation choices. Do not invent examples.
+2. Call typecheck and fix every reported error. Call run with the arguments of each example the prose states and compare the output. Every run starts in a fresh empty working directory; use "before" for invocations that must happen first.
+3. Finish with done, listing external dependencies, one check per concrete example the prose literally states (with "before" for preceding invocations), and a one-sentence note on interpretation choices. Do not invent examples.
 If the prose leaves a decision open that changes observable behavior and no accepted decision covers it, call ask with concise questions instead of guessing.
 
 Rules for the generated program:
@@ -23,7 +22,7 @@ Rules for the generated program:
 - Use only erasable TypeScript syntax: no enums, no namespaces, no parameter properties, no decorators, no "import x = require". Use "import type" for type-only imports.
 - The code must pass "tsc --strict" with Node type definitions available. Never use "any".
 - Prefer the Node standard library. Only when the prose requires an external package, import it normally and declare it in done with a caret version range. Packages are not installed during compilation, so typecheck and run will report their imports as unresolved; that is expected and the harness validates them after installation.
-- Program arguments are process.argv.slice(2). Write to stdout with console.log or process.stdout.write; set the exit code with process.exitCode or process.exit.
+- Program arguments are process.argv.slice(2). The program runs with the user's current directory as working directory, never the directory of its own modules. Write to stdout with console.log or process.stdout.write; set the exit code with process.exitCode or process.exit.
 - Paths are relative, use forward slashes, end in .ts, and contain no ".." segments.`;
 
 export const PROMPT_SHA256 = createHash("sha256").update(SYSTEM_PROMPT).digest("hex");
@@ -37,6 +36,8 @@ export interface Check {
   args: string[];
   stdout: string;
   exitCode: number;
+  /** Invocations run first in the same empty directory, for examples that build on earlier calls. */
+  before?: string[][];
 }
 
 export interface CompileResult {
@@ -147,12 +148,11 @@ function buildTools(session: CompileSession, state: { result?: CompileResult; qu
     {
       name: "run",
       label: "run program",
-      description: "Execute index.ts with the given arguments. Returns stdout, stderr and the exit code.",
-      parameters: Type.Object({ args: Type.Array(Type.String()) }),
+      description: "Execute index.ts with the given arguments in a fresh empty working directory; \"before\" lists invocations to run there first. Returns stdout, stderr and the exit code of the final invocation.",
+      parameters: Type.Object({ args: Type.Array(Type.String()), before: Type.Optional(Type.Array(Type.Array(Type.String()))) }),
       execute: async (_id, params) => {
-        const { args } = params as { args: string[] };
-        const result = spawnSync(process.execPath, [ENTRY, ...args], { cwd: session.staging, encoding: "utf8", env: programEnv(), timeout: 30_000 });
-        if (result.error) return text(`could not run: ${result.error.message}`, { isError: true });
+        const { args, before } = params as { args: string[]; before?: string[][] };
+        const result = runProgram(join(session.staging, ENTRY), args, before ?? []);
         return text(`exit ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
       },
     },
@@ -173,7 +173,7 @@ function buildTools(session: CompileSession, state: { result?: CompileResult; qu
       description: "Finish compilation. The harness then validates all written files itself.",
       parameters: Type.Object({
         dependencies: Type.Array(Type.Object({ name: Type.String(), version: Type.String() })),
-        checks: Type.Array(Type.Object({ args: Type.Array(Type.String()), stdout: Type.String(), exitCode: Type.Number() })),
+        checks: Type.Array(Type.Object({ args: Type.Array(Type.String()), stdout: Type.String(), exitCode: Type.Number(), before: Type.Optional(Type.Array(Type.Array(Type.String()))) })),
         notes: Type.String(),
       }),
       execute: async (_id, params) => {

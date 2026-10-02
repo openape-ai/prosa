@@ -45,14 +45,14 @@ The key is read inside the compiler process, never logged, never written to the 
    | `write_file` | writes one relative `.ts` file; unsafe paths are rejected |
    | `read_previous` | reads a file of the previous validated build |
    | `typecheck` | `tsc --strict` over the staging directory |
-   | `run` | executes `index.ts` in the staging directory with a filtered environment and a timeout |
+   | `run` | executes `index.ts` in a fresh empty temp directory with a filtered environment and a timeout; `before` runs earlier invocations first |
    | `ask` | stops with questions for the author |
    | `done` | submits dependencies, the checks for the examples stated in the prose, and a note |
 
    After `done` the harness itself writes the `package.json`, hashes everything the model wrote, type-checks and runs the checks. A failure is fed back once (two rounds total); the turn budget is `PROSA_MAX_TURNS` (default 40) and the wall-clock limit `PROSA_TIMEOUT_MS` (default 600000). Only a validated staging directory is swapped in; any failure leaves the previous `.output` untouched.
 5. Open questions from the compiler abort the build and are printed; answer them in the prose or under `choices`.
 
-What validation establishes: all written paths are safe, the program type-checks under Node ESM resolution, and the examples the prose states pass. A hash proves byte identity, so reuse re-establishes exactly that state and nothing more; it does not prove semantic correctness beyond the stated examples, and a fresh compilation of the same prose is not guaranteed to produce identical code. The manifest records turns, tool calls and token usage of the compiler run as provenance only; they are not compared.
+What validation establishes: all written paths are safe, the program type-checks under Node ESM resolution, and the examples the prose states pass, each in a fresh empty directory. A hash proves byte identity, so reuse re-establishes exactly that state and nothing more; it does not prove semantic correctness beyond the stated examples, and a fresh compilation of the same prose is not guaranteed to produce identical code. The manifest records turns, tool calls and token usage of the compiler run as provenance only; they are not compared.
 
 ### Dependencies and `install`
 
@@ -60,12 +60,13 @@ A build with external packages gets a harness-owned `package.json` and the state
 
 ### `run`
 
-`prosa run` requires a manifest in state `validated`, an unchanged source and configuration, and intact output hashes; otherwise it fails with the reason. It never calls the compiler. The program runs as `node index.ts <args>` with `.output` as working directory and inherited stdin, stdout and stderr; the exit code and termination signals are forwarded.
+`prosa run` requires a manifest in state `validated`, an unchanged source and configuration, and intact output hashes; otherwise it fails with the reason. It never calls the compiler. The program runs as `node .output/index.ts <args>` with the invoking directory as working directory (relative imports resolve from the module files, data files land where the user is) and inherited stdin, stdout and stderr; the exit code and termination signals are forwarded.
 
 ## Examples
 
 - [examples/addiere](examples/addiere/addiere.prosa): the addition fixture with explicit semantics (zero counts, no arguments sum to 0, invalid arguments exit with code 2 and a message on stderr, output `Hallo Welt: <sum>`). Compiles into `addiere.ts` and `index.ts`.
 - [examples/farbe](examples/farbe/farbe.prosa): a greeting that colors the name with the npm package `picocolors`, demonstrating the explicit install flow.
+- [examples/zeit](examples/zeit/zeit.prosa): a time tracker with `start`, `stop` and `bericht` subcommands and a `zeit.json` data file, written like a small specification (glossary, chapters, decisions, examples with preceding calls). Compiles into nine modules.
 
 ```sh
 cd examples/addiere

@@ -31,7 +31,7 @@ The project root is the nearest ancestor of the current directory that contains 
 | `choices` | accepted answers to compiler questions, sent with every compilation |
 | `maxTokens` | completion limit, default 8192 |
 
-The key is read inside the compiler process, never logged, never written to the manifest, never sent to the model, and stripped from the generated program's environment together with every other `OPENAI_*` and `PROSA_*` variable.
+A git-ignored `prosa.local.json` next to `prosa.json` overrides its fields; keep machine-local settings such as `baseUrl` and `apiKeyFile` there. The key is read inside the compiler process, never logged, never written to the manifest, never sent to the model, and stripped from the generated program's environment together with every other `OPENAI_*` and `PROSA_*` variable. The examples only pin the model; point them at your endpoint with `OPENAI_BASE_URL` and `OPENAI_API_KEY` or a `prosa.local.json`.
 
 ### What `build` does
 
@@ -82,7 +82,6 @@ npm test                                   # node:test suite with a local fake c
 node node_modules/typescript/bin/tsc -p tsconfig.json
 ```
 
-## Experiments
+## Hosting
 
-- [Astra compiler experiment](experiments/2026-10-03-astra-compiler/README.md): German and English inputs, runtime observations and frozen-artifact verification with `gpt-6-astra`.
-- [Luna comparison run](experiments/2026-10-02-english-compiler/README.md): the resumed experiment from the original Claude Code session.
+Development happens at `https://repos.openape.ai/patrick/Prosa`. `https://git.openape.ai/openape-ai/prosa` and `https://github.com/openape-ai/prosa` are automatic read-only mirrors; push branches to the canonical repository only.

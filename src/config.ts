@@ -14,6 +14,7 @@ export interface ProsaConfig {
 }
 
 export const CONFIG_FILE = "prosa.json";
+export const LOCAL_CONFIG_FILE = "prosa.local.json";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "gpt-4.1";
 const DEFAULT_MAX_TOKENS = 8192;
@@ -29,8 +30,12 @@ export function findProjectRoot(from = process.cwd()): string {
   }
 }
 
+/** prosa.json, overlaid by the git-ignored prosa.local.json for machine-local settings such as baseUrl and apiKeyFile. */
 export function loadConfig(root: string): ProsaConfig {
-  const file = join(root, CONFIG_FILE);
+  return { ...readConfigFile(join(root, CONFIG_FILE)), ...readConfigFile(join(root, LOCAL_CONFIG_FILE)) };
+}
+
+function readConfigFile(file: string): ProsaConfig {
   if (!existsSync(file)) return {};
   const raw: unknown = JSON.parse(readFileSync(file, "utf8"));
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error(`${file}: expected a JSON object`);

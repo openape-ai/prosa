@@ -84,4 +84,4 @@ node node_modules/typescript/bin/tsc -p tsconfig.json
 
 ## Hosting
 
-Development happens at `https://repos.openape.ai/patrick/Prosa`. `https://git.openape.ai/openape-ai/prosa` and `https://github.com/openape-ai/prosa` are automatic read-only mirrors; push branches to the canonical repository only.
+Development happens at [github.com/openape-ai/prosa](https://github.com/openape-ai/prosa). The former hosts repos.openape.ai and git.openape.ai were retired in November 2026 and only redirect to GitHub.
